@@ -109,6 +109,10 @@ class NotesListInstance extends InstanceBase<ModuleConfig> {
 			await this.beginPairing()
 			return
 		}
+		await this.startPolling()
+	}
+
+	private async startPolling(): Promise<void> {
 		await this.refreshMe()
 		this.timers.push(setInterval(() => void this.refreshCounts(), COUNTS_INTERVAL_MS))
 		this.timers.push(setInterval(() => void this.refreshMe(), ME_INTERVAL_MS))
@@ -166,16 +170,19 @@ class NotesListInstance extends InstanceBase<ModuleConfig> {
 				this.clearTimers()
 				this.setVariableValues({ pairing_code: '' })
 				// Persist the token; the config form shows it as a secret and never in full.
-				this.saveConfig({
+				this.config = {
 					...this.config,
 					startPairing: false,
 					pairingCode: '',
 					token: res.token,
 					stationName: res.station?.name ?? '',
 					productionName: res.station?.productionName ?? '',
-				})
+				}
+				this.saveConfig(this.config)
 				this.log('info', `Paired as "${res.station?.name}" on ${res.station?.productionName ?? 'production'}.`)
-				// Companion calls configUpdated with the saved config next.
+				// saveConfig does not call configUpdated back, so go live on the new token here.
+				this.api.setToken(res.token)
+				await this.startPolling()
 			}
 		} catch (e) {
 			const err = e as ApiError
