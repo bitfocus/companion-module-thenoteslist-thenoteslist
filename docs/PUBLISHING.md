@@ -50,3 +50,12 @@ Nothing below has been applied here; the working tree was left as found.
 
 Context on the app side: contract in `docs/BUTTON_STATIONS.md` of the app repo; issue The-Notes-List-LLC/thenoteslist#907
 stays open for this and the native Elgato plugin.
+
+## Status 2026-10-01
+
+- Bitfocus approved the request and created `bitfocus/companion-module-thenoteslist-thenoteslist`
+  (empty; Nick has push). That repo is the store source from now on.
+- Module id renamed `thenoteslist` → `thenoteslist-thenoteslist`; `legacyIds: ["thenoteslist"]` so an
+  existing connection carries over. Variables are keyed by connection label, so they are unaffected.
+- Lint fixed (Bitfocus eslint + prettier config), MIT `LICENSE` added, `pkg/` and `*.tgz` untracked.
+- Remaining: push to the Bitfocus repo, tag, then Submit Version in the developer portal (Nick's login).

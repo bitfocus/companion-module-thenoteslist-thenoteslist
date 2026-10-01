@@ -2,53 +2,118 @@
  * Thin client for /api/stations/* (see docs/BUTTON_STATIONS.md in the app repo).
  * Every response is JSON; errors carry { error, message }.
  */
-export interface ApiError { status: number; error: string; message: string }
+export class ApiError extends Error {
+	constructor(
+		public status: number,
+		public error: string,
+		message: string,
+	) {
+		super(message)
+	}
+}
 
 export class StationApi {
-  constructor(private baseUrl: string, private token: string | null) {}
+	constructor(
+		private baseUrl: string,
+		private token: string | null,
+	) {}
 
-  setToken(token: string | null): void { this.token = token }
+	setToken(token: string | null): void {
+		this.token = token
+	}
 
-  private async call<T>(path: string, init: RequestInit = {}, auth = true): Promise<T> {
-    const headers: Record<string, string> = { 'content-type': 'application/json', ...(init.headers as Record<string, string> | undefined) }
-    if (auth) {
-      if (!this.token) throw <ApiError>{ status: 401, error: 'unauthorized', message: 'Not paired' }
-      headers.authorization = `Bearer ${this.token}`
-    }
-    const res = await fetch(`${this.baseUrl.replace(/\/$/, '')}${path}`, { ...init, headers })
-    const body = (await res.json().catch(() => ({}))) as Record<string, unknown>
-    if (!res.ok) {
-      throw <ApiError>{ status: res.status, error: String(body.error ?? 'error'), message: String(body.message ?? res.statusText) }
-    }
-    return body as T
-  }
+	private async call<T>(path: string, init: RequestInit = {}, auth = true): Promise<T> {
+		const headers: Record<string, string> = {
+			'content-type': 'application/json',
+			...(init.headers as Record<string, string> | undefined),
+		}
+		if (auth) {
+			if (!this.token) throw new ApiError(401, 'unauthorized', 'Not paired')
+			headers.authorization = `Bearer ${this.token}`
+		}
+		// fetch is global in Companion's node18 runtime (experimental flag only, no warning).
+		// eslint-disable-next-line n/no-unsupported-features/node-builtins
+		const res = await fetch(`${this.baseUrl.replace(/\/$/, '')}${path}`, { ...init, headers })
+		const body = (await res.json().catch(() => ({}))) as Record<string, unknown>
+		if (!res.ok) {
+			throw new ApiError(
+				res.status,
+				typeof body.error === 'string' ? body.error : 'error',
+				typeof body.message === 'string' ? body.message : res.statusText,
+			)
+		}
+		return body as T
+	}
 
-  pairStart() { return this.call<{ code: string; pollSecret: string; expiresAt: string }>('/api/stations/pair/start', { method: 'POST' }, false) }
-  pairPoll(code: string, pollSecret: string) {
-    return this.call<{ status?: 'pending'; token?: string; station?: { id: string; name: string; productionId: string; productionName: string | null } }>(
-      '/api/stations/pair/poll', { method: 'POST', body: JSON.stringify({ code, pollSecret }) }, false)
-  }
-  me() {
-    return this.call<{
-      station: { id: string; name: string }
-      production: { id: string; name: string | null }
-      modules: Record<'cue' | 'work' | 'production' | 'electrician', boolean>
-      options?: Record<'cue' | 'work' | 'production' | 'electrician', { priorities: Array<{ value: string; label: string; color?: string }>; types: Array<{ value: string; label: string; color?: string }> }>
-    }>('/api/stations/me')
-  }
-  counts() {
-    return this.call<Record<'cue' | 'work' | 'production' | 'electrician', { todo: number; review: number; outstanding: number }> & { asOf: string }>('/api/stations/counts')
-  }
-  createNote(body: { module: string; description: string; priority?: string; type?: string; id: string; cueNumber?: string }) {
-    return this.call<{ note: { id: string; status: string; priority: string; type: string | null }; coerced: Record<string, string | null>; replayed: boolean }>(
-      '/api/stations/notes', { method: 'POST', body: JSON.stringify(body) })
-  }
-  openNoteEditor(module: string, cueNumber?: string) { return this.ui({ command: 'open_note_editor', module, cueNumber }) }
-  ui(body: { command: string; module: string; status?: string; cueNumber?: string; type?: string; priority?: string }) {
-    return this.call<{ sent: boolean }>('/api/stations/ui', { method: 'POST', body: JSON.stringify(body) })
-  }
-  revokeSelf() { return this.call<{ revoked: boolean }>('/api/stations/me', { method: 'DELETE' }) }
-  setLastStatus(status: string) {
-    return this.call<{ note: { id: string; status: string } }>('/api/stations/notes/last/status', { method: 'POST', body: JSON.stringify({ status }) })
-  }
+	async pairStart() {
+		return this.call<{ code: string; pollSecret: string; expiresAt: string }>(
+			'/api/stations/pair/start',
+			{ method: 'POST' },
+			false,
+		)
+	}
+	async pairPoll(code: string, pollSecret: string) {
+		return this.call<{
+			status?: 'pending'
+			token?: string
+			station?: { id: string; name: string; productionId: string; productionName: string | null }
+		}>('/api/stations/pair/poll', { method: 'POST', body: JSON.stringify({ code, pollSecret }) }, false)
+	}
+	async me() {
+		return this.call<{
+			station: { id: string; name: string }
+			production: { id: string; name: string | null }
+			modules: Record<'cue' | 'work' | 'production' | 'electrician', boolean>
+			options?: Record<
+				'cue' | 'work' | 'production' | 'electrician',
+				{
+					priorities: Array<{ value: string; label: string; color?: string }>
+					types: Array<{ value: string; label: string; color?: string }>
+				}
+			>
+		}>('/api/stations/me')
+	}
+	async counts() {
+		return this.call<
+			Record<'cue' | 'work' | 'production' | 'electrician', { todo: number; review: number; outstanding: number }> & {
+				asOf: string
+			}
+		>('/api/stations/counts')
+	}
+	async createNote(body: {
+		module: string
+		description: string
+		priority?: string
+		type?: string
+		id: string
+		cueNumber?: string
+	}) {
+		return this.call<{
+			note: { id: string; status: string; priority: string; type: string | null }
+			coerced: Record<string, string | null>
+			replayed: boolean
+		}>('/api/stations/notes', { method: 'POST', body: JSON.stringify(body) })
+	}
+	async openNoteEditor(module: string, cueNumber?: string) {
+		return this.ui({ command: 'open_note_editor', module, cueNumber })
+	}
+	async ui(body: {
+		command: string
+		module: string
+		status?: string
+		cueNumber?: string
+		type?: string
+		priority?: string
+	}) {
+		return this.call<{ sent: boolean }>('/api/stations/ui', { method: 'POST', body: JSON.stringify(body) })
+	}
+	async revokeSelf() {
+		return this.call<{ revoked: boolean }>('/api/stations/me', { method: 'DELETE' })
+	}
+	async setLastStatus(status: string) {
+		return this.call<{ note: { id: string; status: string } }>('/api/stations/notes/last/status', {
+			method: 'POST',
+			body: JSON.stringify({ status }),
+		})
+	}
 }
