@@ -42,7 +42,8 @@ export function brandedStyle(text: string, hex: string, size: 'auto' | 14 | 18 |
 		text,
 		size,
 		...keyStyle(hex),
-		alignment: 'right:center' as const,
+		// Bottom-right keeps the top-left corner clear for the N.
+		alignment: 'right:bottom' as const,
 		png64: N_PNG64,
 		pngalignment: 'center:center' as const,
 		show_topbar: false,

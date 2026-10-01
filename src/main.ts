@@ -702,7 +702,7 @@ class NotesListInstance extends InstanceBase<ModuleConfig> {
 				style: brandedStyle(
 					`${({ cue: 'CUE', work: 'WORK', production: 'PROD', electrician: 'ELEC' } as Record<string, string>)[m.id]}\nNOTES`,
 					MODULE_COLORS[m.id],
-					'auto',
+					18,
 				),
 				steps: [{ down: [{ actionId: 'tab_jump_module', options: { module: m.id } }], up: [] }],
 				feedbacks: [],
@@ -723,7 +723,7 @@ class NotesListInstance extends InstanceBase<ModuleConfig> {
 			type: 'button',
 			category: 'Selected cue',
 			name: 'Selected cue ◀',
-			style: brandedStyle(`◀ CUE\n${cueVar}`, dark, 'auto'),
+			style: brandedStyle(`◀ CUE\n${cueVar}`, dark, 18),
 			steps: [{ down: [{ actionId: 'selected_cue_prev', options: {} }], up: [] }],
 			feedbacks: [offLive],
 		}
@@ -731,7 +731,7 @@ class NotesListInstance extends InstanceBase<ModuleConfig> {
 			type: 'button',
 			category: 'Selected cue',
 			name: 'Selected cue ▶',
-			style: brandedStyle(`CUE ▶\n${cueVar}`, dark, 'auto'),
+			style: brandedStyle(`CUE ▶\n${cueVar}`, dark, 18),
 			steps: [{ down: [{ actionId: 'selected_cue_next', options: {} }], up: [] }],
 			feedbacks: [offLive],
 		}
@@ -739,7 +739,7 @@ class NotesListInstance extends InstanceBase<ModuleConfig> {
 			type: 'button',
 			category: 'Selected cue',
 			name: 'Selected cue = live',
-			style: brandedStyle(`LIVE\n$(${L}:cue_live)`, dark, 'auto'),
+			style: brandedStyle(`LIVE\n$(${L}:cue_live)`, dark, 18),
 			steps: [{ down: [{ actionId: 'selected_cue_live', options: {} }], up: [] }],
 			feedbacks: [connected],
 		}
@@ -747,15 +747,16 @@ class NotesListInstance extends InstanceBase<ModuleConfig> {
 			type: 'button',
 			category: 'Selected cue',
 			name: 'Display: live cue',
-			style: brandedStyle(`LIVE\n$(${L}:cue_live)`, '#000000', 'auto'),
+			style: brandedStyle(`LIVE\n$(${L}:cue_live)`, '#000000', 18),
 			steps: [{ down: [], up: [] }],
-			feedbacks: [connected],
+			// Stays black: green belongs to the "Selected cue = live" key, which does something.
+			feedbacks: [],
 		}
 		presets.display_selected = {
 			type: 'button',
 			category: 'Selected cue',
 			name: 'Display: selected cue',
-			style: brandedStyle(`NOTE\n${cueVar}`, '#000000', 'auto'),
+			style: brandedStyle(`NOTE\n${cueVar}`, '#000000', 18),
 			steps: [{ down: [], up: [] }],
 			feedbacks: [offLive],
 		}
