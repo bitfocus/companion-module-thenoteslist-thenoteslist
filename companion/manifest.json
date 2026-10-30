@@ -14,7 +14,7 @@
 			"email": "support@thenoteslist.com"
 		}
 	],
-	"legacyIds": ["thenoteslist"],
+	"legacyIds": [],
 	"runtime": {
 		"type": "node22",
 		"api": "nodejs-ipc",
