@@ -35,10 +35,10 @@ export function UpdateActions(self: NotesListInstance): void {
 				),
 				cueOption,
 			],
-			callback: async (event, context) => {
+			callback: async (event) => {
 				const mod = String(event.options.module) as ModuleId
-				let cueNumber: string | undefined =
-					(await context.parseVariablesInString(String(event.options.cueNumber ?? ''))).trim() || undefined
+				// Companion has already filled in the variables (useVariables).
+				let cueNumber: string | undefined = String(event.options.cueNumber ?? '').trim() || undefined
 				if (!cueNumber || cueNumber === '$NA') cueNumber = self.cursorCue()?.number
 				// Not awaited: a slow round-trip must not hold Companion's action timeout
 				// (it logs "Call timed out" after 10 s); ui() logs the result itself.

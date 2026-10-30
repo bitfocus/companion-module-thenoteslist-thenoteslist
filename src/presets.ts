@@ -112,7 +112,14 @@ export function UpdatePresets(self: NotesListInstance): void {
 				MODULE_COLORS[m.id],
 			),
 			steps: [{ down: [{ actionId: 'tab_jump_module', options: { module: m.id } }], up: [] }],
-			feedbacks: [],
+			// Red while the module has notes open.
+			feedbacks: [
+				{
+					feedbackId: 'outstanding_above',
+					options: { module: m.id, threshold: 0 },
+					style: { bgcolor: combineRgb(220, 38, 38), color: combineRgb(255, 255, 255) },
+				},
+			],
 		}
 	}
 

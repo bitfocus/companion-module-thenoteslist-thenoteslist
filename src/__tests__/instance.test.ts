@@ -16,6 +16,7 @@ const h = vi.hoisted(() => {
 		vars,
 		saved: [] as unknown[],
 		savedSecrets: [] as unknown[],
+		checked: [] as string[],
 	}
 })
 
@@ -28,7 +29,9 @@ vi.mock('@companion-module/base', () => {
 		setVariableValues(v: Record<string, unknown>) {
 			Object.assign(h.vars, v)
 		}
-		checkFeedbacks() {}
+		checkFeedbacks(...ids: string[]) {
+			h.checked.push(...ids)
+		}
 		log() {}
 		saveConfig(c: unknown, s?: unknown) {
 			if (c) h.saved.push(c)
@@ -47,6 +50,7 @@ vi.mock('@companion-module/base', () => {
 			ConnectionFailure: 'connection_failure',
 			BadConfig: 'bad_config',
 			Disconnected: 'disconnected',
+			UnknownWarning: 'unknown_warning',
 		},
 		combineRgb: (r: number, g: number, b: number) => (r << 16) + (g << 8) + b,
 		runEntrypoint: (cls: new () => unknown) => {
@@ -104,6 +108,7 @@ beforeEach(async () => {
 	h.vars = {}
 	h.saved = []
 	h.savedSecrets = []
+	h.checked = []
 	routes = {
 		'/api/stations/me': () => ({ body: ME }),
 		'/api/stations/counts': () => ({ body: COUNTS }),
@@ -189,6 +194,17 @@ describe('network failures', () => {
 	})
 })
 
+describe('feedbacks', () => {
+	it("re-checks the colour keys when the show's types and priorities arrive", async () => {
+		routes['/api/stations/me'] = () => ({
+			body: { ...ME, options: { cue: { types: [{ value: 'director', label: 'Director', color: '#f00' }] } } },
+		})
+		await inst.configUpdated(PAIRED, SECRETS)
+		expect(h.checked).toContain('type_color')
+		expect(h.checked).toContain('priority_color')
+	})
+})
+
 describe('pairing', () => {
 	const UNPAIRED = { baseUrl: 'https://notes.test', token: '', startPairing: true }
 	beforeEach(() => {
@@ -219,6 +235,37 @@ describe('pairing', () => {
 		const polls = urls.filter((u) => u.endsWith('/pair/poll'))
 		expect(polls.length).toBeGreaterThan(0)
 		expect(polls.every((u) => u.startsWith('https://other.test/'))).toBe(true)
+	})
+
+	it('re-pairing a paired station clears what the keys show for the old show', async () => {
+		routes['/api/stations/pair/poll'] = () => ({ status: 202, body: { status: 'pending' } })
+		await inst.configUpdated(PAIRED, SECRETS)
+		await flush()
+		expect(h.vars.connected).toBe('true')
+		expect(h.vars.cue_outstanding).toBe(3)
+		await inst.configUpdated({ ...PAIRED, startPairing: true, stationName: 'deck' }, SECRETS)
+		expect(h.vars.connected).toBe('false')
+		expect(h.vars.cue_outstanding).toBe('')
+		expect(h.vars.station_name).toBe('')
+		expect(inst.connected).toBe(false)
+		expect(h.saved.at(-1)).toMatchObject({ stationName: '', pairingCode: 'ABC123' })
+	})
+
+	it('says so when the server cannot be reached during pairing, and shows the code again once it answers', async () => {
+		let down = true
+		routes['/api/stations/pair/poll'] = () => (down ? 'network' : { status: 202, body: { status: 'pending' } })
+		await inst.configUpdated(UNPAIRED)
+		await vi.advanceTimersByTimeAsync(3_500 * 2)
+		expect(h.status.at(-1)?.[1]).toMatch(/^PAIR CODE ABC123/)
+		await vi.advanceTimersByTimeAsync(3_500)
+		expect(h.status.at(-1)).toEqual([
+			'connection_failure',
+			'Pairing code ABC123: Cannot reach notes.test (ECONNREFUSED)',
+		])
+		down = false
+		await vi.advanceTimersByTimeAsync(3_500)
+		expect(h.status.at(-1)?.[0]).toBe('connecting')
+		expect(h.status.at(-1)?.[1]).toMatch(/^PAIR CODE ABC123/)
 	})
 
 	it('starts the paired session itself after a successful pair', async () => {

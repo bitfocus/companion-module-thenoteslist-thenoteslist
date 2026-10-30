@@ -8,6 +8,7 @@ export function UpdateFeedbacks(self: NotesListInstance): void {
 		outstanding_above: {
 			type: 'boolean',
 			name: 'Outstanding count above threshold',
+			description: 'Turns the key red while the chosen module has more outstanding notes than the threshold.',
 			defaultStyle: { bgcolor: combineRgb(220, 38, 38), color: combineRgb(255, 255, 255) },
 			options: [
 				moduleDropdown('work'),
@@ -18,6 +19,7 @@ export function UpdateFeedbacks(self: NotesListInstance): void {
 		type_color: {
 			type: 'advanced',
 			name: 'Colour key by note type (matches the chip in the app)',
+			description: "Colours the key with the chosen note type's colour in the show, as the chip shows it in the app.",
 			options: [moduleDropdown(), ...perModuleChoices('type', 'Type', (m) => self.options?.[m]?.types ?? [], '')],
 			callback: (fb) => {
 				const mod = fb.options.module as ModuleId
@@ -28,6 +30,7 @@ export function UpdateFeedbacks(self: NotesListInstance): void {
 		priority_color: {
 			type: 'advanced',
 			name: 'Colour key by priority (matches the chip in the app)',
+			description: "Colours the key with the chosen priority's colour in the show, as the chip shows it in the app.",
 			options: [
 				moduleDropdown(),
 				...perModuleChoices(
@@ -46,6 +49,7 @@ export function UpdateFeedbacks(self: NotesListInstance): void {
 		selected_cue_off_live: {
 			type: 'boolean',
 			name: 'Selected cue is not the live cue',
+			description: 'Turns the key amber while the selected cue has been stepped away from the live cue.',
 			defaultStyle: { bgcolor: combineRgb(245, 158, 11), color: combineRgb(0, 0, 0) },
 			options: [],
 			callback: () => self.isOffLive(),
@@ -53,6 +57,7 @@ export function UpdateFeedbacks(self: NotesListInstance): void {
 		selected_cue_on_live: {
 			type: 'boolean',
 			name: 'Selected cue is the live cue (desk connected)',
+			description: 'Turns the key green while the selected cue follows the live cue of a connected Eos desk.',
 			defaultStyle: { bgcolor: combineRgb(0, 70, 0), color: combineRgb(255, 255, 255) },
 			options: [],
 			callback: () => self.isOnLive(),
@@ -60,6 +65,7 @@ export function UpdateFeedbacks(self: NotesListInstance): void {
 		eos_connected: {
 			type: 'boolean',
 			name: 'Eos desk connected (read-only reader)',
+			description: 'Turns the key green while the module is connected to the Eos desk.',
 			defaultStyle: { bgcolor: combineRgb(22, 163, 74), color: combineRgb(255, 255, 255) },
 			options: [],
 			callback: () => self.eosConnected,
@@ -67,6 +73,7 @@ export function UpdateFeedbacks(self: NotesListInstance): void {
 		connected: {
 			type: 'boolean',
 			name: 'Connected',
+			description: 'Turns the key green while the station is paired and The Notes List server answers.',
 			defaultStyle: { bgcolor: combineRgb(22, 163, 74), color: combineRgb(255, 255, 255) },
 			options: [],
 			callback: () => self.connected,

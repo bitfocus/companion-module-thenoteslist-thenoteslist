@@ -16,6 +16,7 @@ const COUNTS_BACKOFF_MAX_MS = 30000 // while the server is unreachable: 5, 10, 2
 const ME_INTERVAL_MS = 60000
 const PAIR_POLL_MS = 3500 // server floor is 3000
 const PAIR_TTL_MS = 10 * 60000 // used when the server's expiresAt cannot be parsed
+const PAIR_FAILURES_SHOWN = 3 // pairing checks failed in a row before the status says so
 
 export class NotesListInstance extends InstanceBase<ModuleConfig, ModuleSecrets> {
 	config!: ModuleConfig
@@ -36,6 +37,10 @@ export class NotesListInstance extends InstanceBase<ModuleConfig, ModuleSecrets>
 	private countsFailures = 0
 	/** baseUrl: the server the code was issued by; a code means nothing to another server. */
 	private pairing: { code: string; pollSecret: string; expiresAt: number; baseUrl: string } | null = null
+	/** Pairing checks failed in a row (network or server error). */
+	private pairFailures = 0
+	/** The Ok status text (station · production); the status adds an Eos warning to it when the desk is down. */
+	private okMessage = ''
 	// Cue cursor (#907): the desk's list (the reader is the CueSheet), the live
 	// cue, and the cue number the operator has stepped to.
 	private eos: EosReader | null = null
@@ -121,10 +126,8 @@ export class NotesListInstance extends InstanceBase<ModuleConfig, ModuleSecrets>
 			// Base URL change: the new server has never heard of that code.
 			if (this.pairing && this.pairing.baseUrl !== this.config.baseUrl) this.pairing = null
 			if (this.pairing && Date.now() < this.pairing.expiresAt) {
-				this.updateStatus(
-					InstanceStatus.Connecting,
-					`PAIR CODE ${this.pairing.code} — enter it in the show's Settings → Button stations`,
-				)
+				this.pairFailures = 0
+				this.showPairCode(this.pairing.code)
 				this.loop(PAIR_POLL_MS, async () => this.pollPairing())
 				return
 			}
@@ -173,7 +176,10 @@ export class NotesListInstance extends InstanceBase<ModuleConfig, ModuleSecrets>
 				if (gen !== this.generation) return
 				api.setToken(null)
 				this.secrets = { ...this.secrets, token: '' }
+				this.config = { ...this.config, stationName: '', productionName: '' }
 				this.saveConfig(this.config, this.secrets)
+				// Polling has stopped, so nothing else clears what the keys show for the old show.
+				this.clearPairedState()
 			}
 			const start = await api.pairStart()
 			if (gen !== this.generation) return
@@ -184,18 +190,17 @@ export class NotesListInstance extends InstanceBase<ModuleConfig, ModuleSecrets>
 				expiresAt: Number.isFinite(expiresAt) ? expiresAt : Date.now() + PAIR_TTL_MS,
 				baseUrl: this.config.baseUrl,
 			}
-			this.updateStatus(
-				InstanceStatus.Connecting,
-				`PAIR CODE ${start.code} — enter it in the show's Settings → Button stations`,
-			)
+			this.pairFailures = 0
+			this.showPairCode(start.code)
 			this.setVariableValues({ pairing_code: start.code })
 			// Push the code into the stored config so an OPEN settings window shows it.
 			// configUpdated keeps the in-flight pairing (see the guard there).
 			this.config = { ...this.config, pairingCode: start.code }
 			this.saveConfig(this.config, undefined)
+			const minutes = Math.max(1, Math.round((this.pairing.expiresAt - Date.now()) / 60000))
 			this.log(
 				'warn',
-				`PAIRING CODE: ${start.code}  →  The Notes List → the show → Settings → Button stations. Expires in 10 minutes. (Also in variable $(${this.label}:pairing_code).)`,
+				`PAIRING CODE: ${start.code}  →  The Notes List → the show → Settings → Button stations. Expires in ${minutes} minute${minutes === 1 ? '' : 's'}. (Also in variable $(${this.label}:pairing_code).)`,
 			)
 			this.loop(PAIR_POLL_MS, async () => this.pollPairing())
 		} catch (e) {
@@ -224,6 +229,10 @@ export class NotesListInstance extends InstanceBase<ModuleConfig, ModuleSecrets>
 		try {
 			const res = await api.pairPoll(pairing.code, pairing.pollSecret)
 			if (gen !== this.generation || this.pairing !== pairing) return
+			// The server answers again: put the code back after an outage.
+			if (this.pairFailures >= PAIR_FAILURES_SHOWN) this.log('info', 'Pairing check: the server answers again.')
+			if (this.pairFailures >= PAIR_FAILURES_SHOWN && !res.token) this.showPairCode(pairing.code)
+			this.pairFailures = 0
 			if (res.token) {
 				this.pairing = null
 				this.stopLoops()
@@ -253,8 +262,23 @@ export class NotesListInstance extends InstanceBase<ModuleConfig, ModuleSecrets>
 				this.updateStatus(InstanceStatus.Disconnected, `Pairing ended: ${err.message}`)
 				return
 			}
+			// Network trouble or a server error: the code still stands, but the station
+			// cannot pair until the server answers. Say so instead of showing the code
+			// as if all were well.
+			this.pairFailures++
 			this.log('debug', `Pairing check failed: ${describe(e)}`)
+			if (this.pairFailures === PAIR_FAILURES_SHOWN) {
+				this.log('warn', `Pairing check failing: ${describe(e)}`)
+				this.updateStatus(InstanceStatus.ConnectionFailure, `Pairing code ${pairing.code}: ${describe(e)}`)
+			}
 		}
+	}
+
+	private showPairCode(code: string): void {
+		this.updateStatus(
+			InstanceStatus.Connecting,
+			`PAIR CODE ${code} — enter it in the show's Settings → Button stations`,
+		)
 	}
 
 	// ---------------------------------------------------------------- Eos cue cursor
@@ -295,6 +319,7 @@ export class NotesListInstance extends InstanceBase<ModuleConfig, ModuleSecrets>
 			log: (level, msg) => this.log(level, msg),
 		})
 		this.eos.start()
+		this.showOkStatus()
 		// Another desk or list: the sender starts over against the new reader.
 		this.labels.onCacheChange()
 	}
@@ -313,6 +338,19 @@ export class NotesListInstance extends InstanceBase<ModuleConfig, ModuleSecrets>
 		this.setVariableValues({ eos_connected: connected ? 'true' : 'false' })
 		this.publishCursor()
 		this.checkFeedbacks('eos_connected')
+		this.showOkStatus()
+	}
+
+	/**
+	 * The status while the server side is fine: Ok, or a warning when an Eos desk
+	 * is set but not connected (New note then cannot pick up the live cue).
+	 * Does nothing while the server side is not connected; that status wins.
+	 */
+	private showOkStatus(): void {
+		if (!this.connected) return
+		if (this.eos && !this.eosConnected)
+			this.updateStatus(InstanceStatus.UnknownWarning, `${this.okMessage} · Eos desk not connected`)
+		else this.updateStatus(InstanceStatus.Ok, this.okMessage)
 	}
 
 	/** The selected cue is a stepped cue, not following live. */
@@ -406,7 +444,8 @@ export class NotesListInstance extends InstanceBase<ModuleConfig, ModuleSecrets>
 			const me = await api.me()
 			if (gen !== this.generation) return false
 			this.connected = true
-			this.updateStatus(InstanceStatus.Ok, `${me.station.name} · ${me.production.name ?? ''}`)
+			this.okMessage = `${me.station.name} · ${me.production.name ?? ''}`
+			this.showOkStatus()
 			this.setVariableValues({
 				station_name: me.station.name,
 				production_name: me.production.name ?? '',
@@ -419,6 +458,8 @@ export class NotesListInstance extends InstanceBase<ModuleConfig, ModuleSecrets>
 					this.optionsKey = key
 					this.options = me.options
 					this.updateEntities()
+					// New definitions do not re-run existing feedbacks; the colours must.
+					this.checkFeedbacks('type_color', 'priority_color')
 				}
 			}
 		} catch (e) {
@@ -430,17 +471,7 @@ export class NotesListInstance extends InstanceBase<ModuleConfig, ModuleSecrets>
 				paired = false
 				this.stopLoops()
 				this.updateStatus(InstanceStatus.BadConfig, 'Not paired — tick "Start pairing"')
-				// Keys must not keep showing the revoked station's counts.
-				for (const m of MODULES) this.counts[m.id] = 0
-				this.setVariableValues({
-					station_name: '',
-					production_name: '',
-					cue_outstanding: '',
-					work_outstanding: '',
-					production_outstanding: '',
-					electrician_outstanding: '',
-				})
-				this.checkFeedbacks('outstanding_above')
+				this.clearPairedState()
 			} else {
 				this.updateStatus(InstanceStatus.ConnectionFailure, describe(e))
 			}
@@ -448,6 +479,22 @@ export class NotesListInstance extends InstanceBase<ModuleConfig, ModuleSecrets>
 		}
 		this.checkFeedbacks('connected')
 		return paired
+	}
+
+	/** The station is gone (revoked, or re-pairing): keys must not keep showing its show or counts. */
+	private clearPairedState(): void {
+		this.connected = false
+		for (const m of MODULES) this.counts[m.id] = 0
+		this.setVariableValues({
+			connected: 'false',
+			station_name: '',
+			production_name: '',
+			cue_outstanding: '',
+			work_outstanding: '',
+			production_outstanding: '',
+			electrician_outstanding: '',
+		})
+		this.checkFeedbacks('connected', 'outstanding_above')
 	}
 
 	private async refreshCounts(): Promise<void> {
