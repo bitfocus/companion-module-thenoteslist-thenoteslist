@@ -26,4 +26,14 @@ export const UpgradeScripts: CompanionStaticUpgradeScript<ModuleConfig, ModuleSe
 			updatedFeedbacks: [],
 		}
 	},
+	// Configs from before cue labels existed have no value, which the module treats as on but the
+	// settings window shows as off. Save it as on so the switch matches what the module does.
+	function (
+		_context: CompanionUpgradeContext<ModuleConfig>,
+		props: CompanionStaticUpgradeProps<ModuleConfig, ModuleSecrets>,
+	): CompanionStaticUpgradeResult<ModuleConfig, ModuleSecrets> {
+		if (!props.config || props.config.sendCueLabels !== undefined)
+			return { updatedConfig: null, updatedActions: [], updatedFeedbacks: [] }
+		return { updatedConfig: { ...props.config, sendCueLabels: true }, updatedActions: [], updatedFeedbacks: [] }
+	},
 ]

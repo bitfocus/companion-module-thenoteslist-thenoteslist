@@ -312,6 +312,21 @@ describe('token storage', () => {
 		expect(r.updatedSecrets).toBeUndefined()
 	})
 
+	it('upgrade: saves cue labels as on when the setting is missing', async () => {
+		const { UpgradeScripts } = await import('../upgrades.js')
+		const r = UpgradeScripts[1]({} as never, { config: PAIRED, secrets: {}, actions: [], feedbacks: [] } as never)
+		expect(r.updatedConfig).toEqual({ ...PAIRED, sendCueLabels: true })
+	})
+
+	it('upgrade: keeps an explicit cue labels setting', async () => {
+		const { UpgradeScripts } = await import('../upgrades.js')
+		const r = UpgradeScripts[1](
+			{} as never,
+			{ config: { ...PAIRED, sendCueLabels: false }, secrets: {}, actions: [], feedbacks: [] } as never,
+		)
+		expect(r.updatedConfig).toBeNull()
+	})
+
 	it('uses the secret when the config holds no token', async () => {
 		await inst.configUpdated(PAIRED, { token: 'from_secrets' })
 		expect(h.savedSecrets).toEqual([])
